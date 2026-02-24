@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import { sqliteD1Adapter } from '@payloadcms/db-d1-sqlite'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { buildConfig } from 'payload'
 import { fileURLToPath } from 'url'
@@ -10,6 +9,7 @@ import { r2Storage } from '@payloadcms/storage-r2'
 
 import { Users } from './collections/Users'
 import { Media } from './collections/Media'
+import { postgresAdapter } from '@payloadcms/db-postgres'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -18,8 +18,11 @@ const realpath = (value: string) => (fs.existsSync(value) ? fs.realpathSync(valu
 const isCLI = process.argv.some((value) => realpath(value).endsWith(path.join('payload', 'bin.js')))
 const isProduction = process.env.NODE_ENV === 'production'
 
-const cloudflare =
-  isCLI || !isProduction
+const isBuild = process.env.NEXT_BUILD === 'true'
+
+const cloudflare = isBuild
+  ? { env: { D1: {} as any, R2: {} as any } }
+  : isCLI || !isProduction
     ? await getCloudflareContextFromWrangler()
     : await getCloudflareContext({ async: true })
 
@@ -36,7 +39,13 @@ export default buildConfig({
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
   },
-  db: sqliteD1Adapter({ binding: cloudflare.env.D1 }),
+  db: postgresAdapter({
+    // schemaName: 'payload_sandbox_2',
+    pool: {
+      connectionString: process.env.DATABASE_URI,
+      maxUses: 1,
+    },
+  }),
   plugins: [
     r2Storage({
       bucket: cloudflare.env.R2,
